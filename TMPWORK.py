@@ -58,13 +58,16 @@ def get_timecode(file_name):
     right = w * 4/10
     bottom = h * 1/15
     im1 = im.crop((0,0,right,bottom))
+    # im1.show()
     ocr_result = pytesseract.image_to_string(im1, lang='eng',config='--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789-:.')
     os.remove('frame.jpg')
-    ## insert code to split up timecode
+    # insert code to split up timecode
+    print(ocr_result)
     ocr_result = re.split('[:-]',ocr_result)
     date = ocr_result[0][-4:] + '-' + ocr_result[1]+'-' + ocr_result[2][0:2]
     time = ocr_result[2][-2:] + ':' + ocr_result[3] + ':' + ocr_result[4][0:2]
     return date, time
+    return None
 
 def get_time_diff(datetime1,datetime2):
     date1, time1 = datetime1[0], datetime1[1]
@@ -89,9 +92,38 @@ def get_time_diff(datetime1,datetime2):
         syncedTime = datetime1[1]
     return syncedTime, timeshift
 
-    
+def get_time_diff_multiple(dateTimes):
+    #Assert all of these happens on the same day
+    testTime = dateTimes[0][0]
+    dayStatus = [True if n[0] == testTime else False for n in dateTimes]
+    if False in dayStatus:
+        print('Some of these videos happen on different days!')
+        return None
+    compTimes = [float((n[1].split(':'))[1])*60 + float((n[1].split(':'))[2]) for n in dateTimes]
+    setTime = max(compTimes)
+    timeShifts = [setTime - n for n in compTimes]
+    return timeShifts
+
+def shift_by(video,time,output):
+    # Code to crop start
+    ## ffmpeg -i in.mp4 -ss 64 -c:v libx264 out.mp4
+    subprocess.call([
+        'ffmepg',
+        '-i',
+        video,
+        '-ss',
+        time,
+        'c:v',
+        'libx264', #can't be copy, the times are off by too much i think. can be tested per machine.
+        output
+    ])
+
+
 if __name__ == "__main__":
-    dt1 = (get_creation_time('test.LRV'))
+    # dt1 = (get_creation_time('Resources/First_Person_Videos/Parent/GOPR1042.MP4'))
+    # print(dt1)
     # get_frames('vid1.mp4','1')
-    dt2 = get_timecode('vid1.mp4')
-    print(get_time_diff(dt1,dt2))
+    # dt2 = get_timecode('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4')
+    # print(get_time_diff(dt1,dt2))
+    dateTimes = [('2019-03-06', '11:34:48.000000'),('2019-03-06', '11:35:52'),('2019-03-06', '11:34:46'),('2019-03-06', '11:34:55.000000')]
+    get_time_diff_multiple(dateTimes)
