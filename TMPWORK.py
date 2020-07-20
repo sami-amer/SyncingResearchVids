@@ -6,8 +6,11 @@ import pandas as pd
 import pytesseract
 from PIL import Image
 import re
+import cv2
+import numpy as np
 
 def get_creation_time(file_name):
+    
     subprocess.call([
         'ffmpeg',
         '-i',
@@ -24,7 +27,11 @@ def get_creation_time(file_name):
         'ffmetadata',
         'output.txt']
     )
-    text  = pd.read_csv('output.txt', sep = '=',index_col= 0)
+    try:
+        text  = pd.read_csv('output.txt', sep = '=',index_col= 0)
+    except:
+        print('Error in video!')
+        return None
     time = (text.loc['creation_time'][0])
     os.remove('output.txt')
     time = time.split('T')
@@ -59,15 +66,19 @@ def get_timecode(file_name):
     bottom = h * 1/15
     im1 = im.crop((0,0,right,bottom))
     # im1.show()
-    ocr_result = pytesseract.image_to_string(im1, lang='eng',config='--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789-:.')
+    ret,img = cv2.threshold(np.array(im1), 125, 255, cv2.THRESH_BINARY)
+    img = Image.fromarray(img.astype(np.uint8))
+    width, height = img.size[0], img.size[1]
+    img = img.resize((500,int((500)/width * height)),Image.ANTIALIAS)
+    ocr_result = pytesseract.image_to_string(img, lang='eng',config='--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789-:.')
+    # img.show()
     os.remove('frame.jpg')
-    # insert code to split up timecode
-    print(ocr_result)
+    # print(ocr_result)
+    #insert code to split up timecode
     ocr_result = re.split('[:-]',ocr_result)
     date = ocr_result[0][-4:] + '-' + ocr_result[1]+'-' + ocr_result[2][0:2]
     time = ocr_result[2][-2:] + ':' + ocr_result[3] + ':' + ocr_result[4][0:2]
     return date, time
-    return None
 
 def get_time_diff(datetime1,datetime2):
     date1, time1 = datetime1[0], datetime1[1]
@@ -112,7 +123,7 @@ def shift_by(video,time,output):
         '-i',
         video,
         '-ss',
-        time,
+        str(time),
         'c:v',
         'libx264', #can't be copy, the times are off by too much i think. can be tested per machine.
         output
@@ -125,5 +136,24 @@ if __name__ == "__main__":
     # get_frames('vid1.mp4','1')
     # dt2 = get_timecode('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4')
     # print(get_time_diff(dt1,dt2))
-    dateTimes = [('2019-03-06', '11:34:48.000000'),('2019-03-06', '11:35:52'),('2019-03-06', '11:34:46'),('2019-03-06', '11:34:55.000000')]
-    get_time_diff_multiple(dateTimes)
+    # dateTimes = [('2019-03-06', '11:34:48.000000'),('2019-03-06', '11:35:52'),('2019-03-06', '11:34:46'),('2019-03-06', '11:34:55.000000')]
+    # get_time_diff_multiple(dateTimes)
+    dt1 = get_creation_time('Resources/GOPR1042.MP4') # make it automcatically detect gopro vs timecode?
+    dt2 = get_creation_time('Resources/GOPR4636.LRV')
+    # dt3 = get_creation_time('Resources/GOPR4636-004.MP4') # make the code catch this
+    dt4 = get_creation_time('Resources/GP014636.LRV')
+    dt5 = get_timecode('Resources/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4')
+    dt6 = get_timecode('Resources/p01_s1_vid2_2019-03-06-11-36-09.mp4')
+    dt7 = get_timecode('Resources/p01_s1_vid3_2019-03-06-11-36-09.mp4')
+    times = [dt1,dt2,dt4,dt5,dt6,dt7]
+    shift = get_time_diff_multiple(times)
+    print(shift)
+    shift_by('Resources/GOPR1042.MP4',956,'1.mp4')
+    shift_by('Resources/GOPR4636.LRV',1062,'2.mp4')
+    shift_by('Resources/GP014636.LRV',0,'3.mp4')
+    shift_by('Resources/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4',873,'4.mp4')
+    shift_by('Resources/p01_s1_vid2_2019-03-06-11-36-09.mp4',872,'5.mp4')
+    shift_by('Resources/p01_s1_vid3_2019-03-06-11-36-09.mp4',871,'6.mp4')
+    # TODO: map shifts to a video files, so you can get which is mapped to annotations
+
+
