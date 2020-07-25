@@ -118,42 +118,55 @@ def get_time_diff_multiple(dateTimes):
 def shift_by(video,time,output):
     # Code to crop start
     ## ffmpeg -i in.mp4 -ss 64 -c:v libx264 out.mp4
+    # Code to add black frames
+ 
+    # ffmpeg -i test.mp4 -f lavfi -i "color=c=black:s=640x480:r=25:sar=0/1" -filter_complex \
+    # "[0:v] setpts=PTS-STARTPTS [main]; \
+    # [1:v] trim=end=10,setpts=PTS-STARTPTS [pre]; \
+    # [1:v] trim=end=30,setpts=PTS-STARTPTS [post]; \
+    # [pre][main][post] concat=n=3:v=1:a=0 [out]" \
+    # -map "[out]" -vcodec mpeg2video -maxrate 30000k -b:v 30000k output.mp4
     subprocess.call([
-        'ffmepg',
+        'ffmpeg',
         '-i',
         video,
         '-ss',
         str(time),
-        'c:v',
+        '-c:v',
         'libx264', #can't be copy, the times are off by too much i think. can be tested per machine.
         output
     ])
 
+def add_black_frames(video,before,after):
+    ## add support for multiple ratios and resolutions
+    ## 
+    # ffmpeg -i input -f lavfi -i "color=c=black:s=720x576:r=25:sar=1023/788" -filter_complex \
+    # "[0:v] setpts=PTS-STARTPTS [main]; \
+    #  [1:v] trim=end=10,setpts=PTS-STARTPTS [pre]; \
+    #  [1:v] trim=end=30,setpts=PTS-STARTPTS [post]; \
+    #  [pre][main][post] concat=n=3:v=1:a=0 [out]" \
+    # -map "[out]" -vcodec mpeg2video -maxrate 30000k -b:v 30000k output.mpg
+    subprocess.call([
+        'ffmpeg', '-i', video, '-f', 'lavfi','-i', 'color=c=black:s=640x480:r=25:sar=0/1','-filter_complex','[0:v] setpts=PTS-STARTPTS [main]; [1:v] trim=end='+ str(before) +',setpts=PTS-STARTPTS [pre]; [1:v] trim=end='+str(after)+',setpts=PTS-STARTPTS [post]; [pre][main][post] concat=n=3:v=1:a=0 [out]','-map','[out]', 
+        '-vcodec', 'libx264', '-maxrate', '30000k', '-b:v', '30000k', 'output.mp4'
+    ])
+
+def get_res(video):
+    # ffmpeg -i video.mp4 2>&1 | grep Video: | grep -Po '\d{3,5}x\d{3,5}'
+    subprocess.Popen(['ffmpeg', '-i', 'Resources/videos/test.mp4', '2>&1','|', 'grep', 'Video:','|','grep', '-Po', '\d{3,5}x\d{3,5}'])
+
+def get_length(filename):
+    result = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                             "format=duration", "-of",
+                             "default=noprint_wrappers=1:nokey=1", filename],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT)
+    return float(result.stdout)
 
 if __name__ == "__main__":
-    # dt1 = (get_creation_time('Resources/First_Person_Videos/Parent/GOPR1042.MP4'))
-    # print(dt1)
-    # get_frames('vid1.mp4','1')
-    # dt2 = get_timecode('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4')
-    # print(get_time_diff(dt1,dt2))
-    # dateTimes = [('2019-03-06', '11:34:48.000000'),('2019-03-06', '11:35:52'),('2019-03-06', '11:34:46'),('2019-03-06', '11:34:55.000000')]
-    # get_time_diff_multiple(dateTimes)
-    dt1 = get_creation_time('Resources/GOPR1042.MP4') # make it automcatically detect gopro vs timecode?
-    dt2 = get_creation_time('Resources/GOPR4636.LRV')
-    # dt3 = get_creation_time('Resources/GOPR4636-004.MP4') # make the code catch this
-    dt4 = get_creation_time('Resources/GP014636.LRV')
-    dt5 = get_timecode('Resources/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4')
-    dt6 = get_timecode('Resources/p01_s1_vid2_2019-03-06-11-36-09.mp4')
-    dt7 = get_timecode('Resources/p01_s1_vid3_2019-03-06-11-36-09.mp4')
-    times = [dt1,dt2,dt4,dt5,dt6,dt7]
-    shift = get_time_diff_multiple(times)
-    print(shift)
-    shift_by('Resources/GOPR1042.MP4',956,'1.mp4')
-    shift_by('Resources/GOPR4636.LRV',1062,'2.mp4')
-    shift_by('Resources/GP014636.LRV',0,'3.mp4')
-    shift_by('Resources/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4',873,'4.mp4')
-    shift_by('Resources/p01_s1_vid2_2019-03-06-11-36-09.mp4',872,'5.mp4')
-    shift_by('Resources/p01_s1_vid3_2019-03-06-11-36-09.mp4',871,'6.mp4')
+    # add_black_frames('Resources/videos/test.mp4',10,30)
+    # get_res(None)
+    print(get_length('Resources/videos/test.mp4'))
     # TODO: map shifts to a video files, so you can get which is mapped to annotations
 
 
