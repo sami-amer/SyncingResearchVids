@@ -90,17 +90,14 @@ def get_time_diff(datetime1,datetime2):
         return None
     # step 2: find which one is the later timestamp (and thus the timestamp to remain unchanged)
     # only checks hour for issues, they should be the same
-    if time1[0] != time2[0]:
-        print('The videos are off by an hour. This doesnt make sense, and is probably due to daylight savings issues')
-        return None
     compTime1 = float(time1[1]) * 60 + float(time1[2])
     compTime2 = float(time2[1])*60 + float(time2[2])
     timeshift = (compTime1 - compTime2)
     if timeshift < 0:
-        syncedTime = datetime2[1]
+        syncedTime = datetime1[1]
         timeshift= abs(timeshift)
     else:
-        syncedTime = datetime1[1]
+        syncedTime = datetime2[1]
     return syncedTime, timeshift
 
 def get_time_diff_multiple(dateTimes):
@@ -137,7 +134,7 @@ def shift_by(video,time,output):
         output
     ])
 
-def add_black_frames(video,before,after):
+def add_black_frames(video,before,after,res):
     ## add support for multiple ratios and resolutions
     ## 
     # ffmpeg -i input -f lavfi -i "color=c=black:s=720x576:r=25:sar=1023/788" -filter_complex \
@@ -147,13 +144,16 @@ def add_black_frames(video,before,after):
     #  [pre][main][post] concat=n=3:v=1:a=0 [out]" \
     # -map "[out]" -vcodec mpeg2video -maxrate 30000k -b:v 30000k output.mpg
     subprocess.call([
-        'ffmpeg', '-i', video, '-f', 'lavfi','-i', 'color=c=black:s=640x480:r=25:sar=0/1','-filter_complex','[0:v] setpts=PTS-STARTPTS [main]; [1:v] trim=end='+ str(before) +',setpts=PTS-STARTPTS [pre]; [1:v] trim=end='+str(after)+',setpts=PTS-STARTPTS [post]; [pre][main][post] concat=n=3:v=1:a=0 [out]','-map','[out]', 
+        'ffmpeg', '-i', video, '-f', 'lavfi','-i', 'color=c=black:s='+res+':r=25:sar=0/1','-filter_complex','[0:v] setpts=PTS-STARTPTS [main]; [1:v] trim=end='+ str(before) +',setpts=PTS-STARTPTS [pre]; [1:v] trim=end='+str(after)+',setpts=PTS-STARTPTS [post]; [pre][main][post] concat=n=3:v=1:a=0 [out]','-map','[out]', 
         '-vcodec', 'libx264', '-maxrate', '30000k', '-b:v', '30000k', 'output.mp4'
     ])
 
 def get_res(video):
-    # ffmpeg -i video.mp4 2>&1 | grep Video: | grep -Po '\d{3,5}x\d{3,5}'
-    subprocess.Popen(['ffmpeg', '-i', 'Resources/videos/test.mp4', '2>&1','|', 'grep', 'Video:','|','grep', '-Po', '\d{3,5}x\d{3,5}'])
+    # ffprobe -v error -show_entries stream=width,height -of csv=p=0:s=x input.m4v
+    result = subprocess.run(['ffprobe','-v','error','-show_entries', 'stream=width,height', '-of','csv=p=0:s=x',video],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT)
+    return result.stdout.decode('utf-8').rstrip()
 
 def get_length(filename):
     result = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
@@ -163,10 +163,62 @@ def get_length(filename):
         stderr=subprocess.STDOUT)
     return float(result.stdout)
 
+def line_up_GOPR(vid,gopr):
+    vidTime = get_timecode(vid)
+    goprTime = get_creation_time(gopr)
+    print(goprTime,vidTime)
+    begBlack, startTime = get_time_diff(vidTime,goprTime)[1], get_time_diff(vidTime,goprTime)[0]  # check which starts first
+    print(begBlack)
+    print(startTime)
+    if startTime == vidTime[1]:
+        endBlack = get_length(vid)-get_length(gopr)-begBlack
+        res = get_res(gopr)
+        add_black_frames(gopr,begBlack,endBlack,res)
+        print('vid')
+    elif startTime == goprTime[1]:
+        endBlack = 0
+        print('gopr')
+        # add_black_frames(vid,begBlack,endBlack)
+        shift_by(gopr,begBlack,'output.mp4')
+
+
+def convert_csv_to_srt(csv):
+    csv = pd.read_csv(csv)
+    with open('main_subtititles.srt','w+') as f:
+        for row in csv.iterrows():
+            elapsed_time = (row[1]['elapsed_time']).split(' ')[2].split('.')[0]+',00'
+            speaker = (row[1]['speaker'])
+            number = row[0] + 1 #srt is not 0 index
+            content = row[1]['content']
+            try:
+                end_time = (csv.loc[row[0]+1]['elapsed_time']).split(' ')[2].split('.')[0]+',00'
+            except:
+                print('last line')
+            if elapsed_time == end_time:
+                secLater = int(elapsed_time.split(':')[2][0:2]) + 1
+                if secLater < 60:
+                    if secLater < 10:
+                        secLater = '0'+str(secLater)
+                    end_time = elapsed_time[0:6]+str(secLater)+',00'
+                else:
+                    minLater = int(elapsed_time.split(':')[1][0:2]) + 1
+                    if minLater < 10:
+                        minLater = '0'+str(minLater)
+                    # print(minLater)
+                    secLater = secLater - 60
+                    if secLater < 10:
+                        secLater = '0'+str(secLater)
+                    end_time = elapsed_time[0:3] + str(minLater)+':'+str(secLater)+',00'
+            f.write(str(number)+'\n'+elapsed_time+'-->'+end_time+'\n'+content+'\n\n')
+
 if __name__ == "__main__":
     # add_black_frames('Resources/videos/test.mp4',10,30)
     # get_res(None)
-    print(get_length('Resources/videos/test.mp4'))
-    # TODO: map shifts to a video files, so you can get which is mapped to annotations
+    # print(get_length('Resources/videos/test.mp4'))
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/First_Person_Videos/Child/GP014636.MP4')
+    # print(get_res('Resources/First_Person_Videos/Child/GP014636.MP4'))
+    # TODO: make a wrapper that detects which video needs what
+    # make it possible to detect if a vid is before start, then change technique
+    convert_csv_to_srt('Resources/Rev_transcription (dialogic reading)/p01_s1_vid_parent_annotation_2019-03-06-11-36-09.csv')
 
 
