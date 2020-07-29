@@ -131,10 +131,12 @@ def shift_by(video,time,output):
         str(time),
         '-c:v',
         'libx264', #can't be copy, the times are off by too much i think. can be tested per machine.
+        '-c:a',
+        'aac',
         output
     ])
 
-def add_black_frames(video,before,after,res):
+def add_black_frames(video,before,after,res,output):
     ## add support for multiple ratios and resolutions
     ## 
     # ffmpeg -i input -f lavfi -i "color=c=black:s=720x576:r=25:sar=1023/788" -filter_complex \
@@ -143,11 +145,22 @@ def add_black_frames(video,before,after,res):
     #  [1:v] trim=end=30,setpts=PTS-STARTPTS [post]; \
     #  [pre][main][post] concat=n=3:v=1:a=0 [out]" \
     # -map "[out]" -vcodec mpeg2video -maxrate 30000k -b:v 30000k output.mpg
+    
     subprocess.call([
-        'ffmpeg', '-i', video, '-f', 'lavfi','-i', 'color=c=black:s='+res+':r=25:sar=0/1','-filter_complex','[0:v] setpts=PTS-STARTPTS [main]; [1:v] trim=end='+ str(before) +',setpts=PTS-STARTPTS [pre]; [1:v] trim=end='+str(after)+',setpts=PTS-STARTPTS [post]; [pre][main][post] concat=n=3:v=1:a=0 [out]','-map','[out]', 
-        '-vcodec', 'libx264', '-maxrate', '30000k', '-b:v', '30000k', 'output.mp4'
+        'ffmpeg', '-i', video, '-f', 'lavfi','-i', 'color=c=black:s='+res+':r=30:sar=1/1','-filter_complex','[0:v] setpts=PTS-STARTPTS [main]; [1:v] trim=end='+ str(before) +',setpts=PTS-STARTPTS [pre]; [1:v] trim=end='+str(after)+',setpts=PTS-STARTPTS [post]; [pre][main][post] concat=n=3:v=1:a=0 [out]','-map','[out]', 
+        '-vcodec', 'libx264', '-maxrate', '30000k', '-b:v', '30000k', 'tempVid.mp4'
     ])
-
+    # ffmpeg -i input-video.mp4 output-audio.mp3
+    subprocess.call([
+        'ffmpeg', '-i',video,'tempAud.m4a'
+    ])
+    # ffmpeg -i in.avi -i audio.wav -filter_complex"[1]adelay=62000|62000[aud];[0][aud]amix" -c:v copy out.avi
+    audioShift = before * 1000
+    subprocess.call([
+        'ffmpeg','-i','tempVid.mp4','-i','tempAud.m4a', '-filter_complex','[1] adelay='+str(audioShift)+'|'+str(audioShift)+',aformat=sample_fmts=fltp:sample_rates=48000 [aud]','-map', '[aud]','-map','0:v','-c:v','copy',output
+    ])
+    os.remove('tempAud.m4a')
+    os.remove('tempVid.mp4')
 def get_res(video):
     # ffprobe -v error -show_entries stream=width,height -of csv=p=0:s=x input.m4v
     result = subprocess.run(['ffprobe','-v','error','-show_entries', 'stream=width,height', '-of','csv=p=0:s=x',video],
@@ -163,9 +176,12 @@ def get_length(filename):
         stderr=subprocess.STDOUT)
     return float(result.stdout)
 
-def line_up_GOPR(vid,gopr):
+def line_up_GOPR(vid,gopr,output,gopro = True):
     vidTime = get_timecode(vid)
-    goprTime = get_creation_time(gopr)
+    if gopro:
+        goprTime = get_creation_time(gopr)
+    else:
+        goprTime = get_timecode(gopr)
     print(goprTime,vidTime)
     begBlack, startTime = get_time_diff(vidTime,goprTime)[1], get_time_diff(vidTime,goprTime)[0]  # check which starts first
     print(begBlack)
@@ -173,18 +189,18 @@ def line_up_GOPR(vid,gopr):
     if startTime == vidTime[1]:
         endBlack = get_length(vid)-get_length(gopr)-begBlack
         res = get_res(gopr)
-        add_black_frames(gopr,begBlack,endBlack,res)
+        add_black_frames(gopr,begBlack,endBlack,res,output)
         print('vid')
     elif startTime == goprTime[1]:
         endBlack = 0
         print('gopr')
         # add_black_frames(vid,begBlack,endBlack)
-        shift_by(gopr,begBlack,'output.mp4')
+        shift_by(gopr,begBlack,output)
 
 
-def convert_csv_to_srt(csv):
+def convert_csv_to_srt(csv,output):
     csv = pd.read_csv(csv)
-    with open('main_subtititles.srt','w+') as f:
+    with open(output,'w+') as f:
         for row in csv.iterrows():
             elapsed_time = (row[1]['elapsed_time']).split(' ')[2].split('.')[0]+',00'
             speaker = (row[1]['speaker'])
@@ -209,7 +225,25 @@ def convert_csv_to_srt(csv):
                     if secLater < 10:
                         secLater = '0'+str(secLater)
                     end_time = elapsed_time[0:3] + str(minLater)+':'+str(secLater)+',00'
-            f.write(str(number)+'\n'+elapsed_time+'-->'+end_time+'\n'+content+'\n\n')
+            f.write(str(number)+'\n'+elapsed_time+'-->'+end_time+'\n'+speaker+': '+content+'\n\n')
+
+def line_up(main, vid2, vid3, parentList, childList):
+    convert_csv_to_srt(main,'main.srt')
+    line_up_GOPR(main,vid2,'vid2.mp4',False)
+    line_up_GOPR(main,vid3,'vid3.mp4',False)
+    for i,vid in enumerate(parentList):
+        line_up_GOPR(main,vid,'parent'+str(i+1)+'.mp4')
+    for i, vid in enumerate(childList):
+        line_up_GOPR(main,vid,'child'+str(i+1)+'.mp4')
+
+def cut_to_story(annotation):
+    csv = pd.read_csv(annotation)
+    toCut = 0
+    for row in csv.iterrows():
+        if (row[1]['Storyreading']) == 1:
+            toCut = row[0] * 5
+            break
+    shift_by(main,toCut,'main.mp4')
 
 if __name__ == "__main__":
     # add_black_frames('Resources/videos/test.mp4',10,30)
@@ -219,6 +253,13 @@ if __name__ == "__main__":
     # print(get_res('Resources/First_Person_Videos/Child/GP014636.MP4'))
     # TODO: make a wrapper that detects which video needs what
     # make it possible to detect if a vid is before start, then change technique
-    convert_csv_to_srt('Resources/Rev_transcription (dialogic reading)/p01_s1_vid_parent_annotation_2019-03-06-11-36-09.csv')
-
+    # convert_csv_to_srt('Resources/Rev_transcription (dialogic reading)/p01_s1_vid_parent_annotation_2019-03-06-11-36-09.csv','p01_s1_vid__parent_annotation_2019-03-06-11-36-09.srt')
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/videos/p01_s1_vid2_2019-03-06-11-36-09.mp4','2.mp4',False)
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/videos/p01_s1_vid3_2019-03-06-11-36-09.mp4','3.mp4',False)
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/First_Person_Videos/Parent/GOPR1042.MP4','parent.mp4')
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/First_Person_Videos/Child/GP014636.MP4','child.mp4')
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/GOPR1043-003.MP4','parent2.mp4')
+    # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/GOPR4636-004.MP4','child2.mp4')
+    # cut_to_story('Resources/video data labeling /parent-child(affect-labels)-april9/p01_s1_vid_parent_annotation_2019-03-06-11-36-09_Kaitlin_2020-01-13 10_55_52.csv')
+    pass
 
