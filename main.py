@@ -227,16 +227,20 @@ def convert_csv_to_srt(csv,output):
                     end_time = elapsed_time[0:3] + str(minLater)+':'+str(secLater)+',00'
             f.write(str(number)+'\n'+elapsed_time+'-->'+end_time+'\n'+speaker+': '+content+'\n\n')
 
-def line_up(main, vid2, vid3, parentList, childList):
-    convert_csv_to_srt(main,'main.srt')
-    line_up_GOPR(main,vid2,'vid2.mp4',False)
-    line_up_GOPR(main,vid3,'vid3.mp4',False)
+def line_up(main, vid2, vid3, parentList, childList,transcript, folder, storyLineUp = False):
+    os.mkdir(folder)
+    convert_csv_to_srt(transcript,folder +'/main.srt')
+    if storyLineUp:
+        cut_to_story(main,storyLineUp)
+        main = 'main.mp4'
+    line_up_GOPR(main,vid2,folder +'/vid2.mp4',False)
+    line_up_GOPR(main,vid3,folder +'/vid3.mp4',False)
     for i,vid in enumerate(parentList):
-        line_up_GOPR(main,vid,'parent'+str(i+1)+'.mp4')
+        line_up_GOPR(main,vid,folder + '/parent'+str(i+1)+'.mp4')
     for i, vid in enumerate(childList):
-        line_up_GOPR(main,vid,'child'+str(i+1)+'.mp4')
+        line_up_GOPR(main,vid,folder + '/child'+str(i+1)+'.mp4')
 
-def cut_to_story(annotation):
+def cut_to_story(main, annotation):
     csv = pd.read_csv(annotation)
     toCut = 0
     for row in csv.iterrows():
@@ -261,5 +265,8 @@ if __name__ == "__main__":
     # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/GOPR1043-003.MP4','parent2.mp4')
     # line_up_GOPR('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/GOPR4636-004.MP4','child2.mp4')
     # cut_to_story('Resources/video data labeling /parent-child(affect-labels)-april9/p01_s1_vid_parent_annotation_2019-03-06-11-36-09_Kaitlin_2020-01-13 10_55_52.csv')
+    parentList = ['Resources/First_Person_Videos/Parent/GOPR1042.MP4','Resources/GOPR1043-003.MP4']
+    childList = ['Resources/First_Person_Videos/Child/GP014636.MP4','Resources/GOPR4636-004.MP4']
+    line_up('Resources/videos/p01_s1_vid__parent_annotation_2019-03-06-11-36-09.mp4','Resources/videos/p01_s1_vid2_2019-03-06-11-36-09.mp4','Resources/videos/p01_s1_vid3_2019-03-06-11-36-09.mp4',parentList,childList,'Resources/Rev_transcription (dialogic reading)/p01_s1_vid_parent_annotation_2019-03-06-11-36-09.csv','Story','Resources/video data labeling /parent-child(affect-labels)-april9/p01_s1_vid_parent_annotation_2019-03-06-11-36-09_Kaitlin_2020-01-13 10_55_52.csv')
     pass
 
