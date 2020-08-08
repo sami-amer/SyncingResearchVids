@@ -161,6 +161,7 @@ def add_black_frames(video,before,after,res,output):
     ])
     os.remove('tempAud.m4a')
     os.remove('tempVid.mp4')
+
 def get_res(video):
     # ffprobe -v error -show_entries stream=width,height -of csv=p=0:s=x input.m4v
     result = subprocess.run(['ffprobe','-v','error','-show_entries', 'stream=width,height', '-of','csv=p=0:s=x',video],
@@ -182,10 +183,10 @@ def line_up_GOPR(vid,gopr,output,gopro = True):
         goprTime = get_creation_time(gopr)
     else:
         goprTime = get_timecode(gopr)
-    print(goprTime,vidTime)
+    # print(goprTime,vidTime)
     begBlack, startTime = get_time_diff(vidTime,goprTime)[1], get_time_diff(vidTime,goprTime)[0]  # check which starts first
-    print(begBlack)
-    print(startTime)
+    # print(begBlack)
+    # print(startTime)
     if startTime == vidTime[1]:
         endBlack = get_length(vid)-get_length(gopr)-begBlack
         res = get_res(gopr)
@@ -196,7 +197,7 @@ def line_up_GOPR(vid,gopr,output,gopro = True):
         print('gopr')
         # add_black_frames(vid,begBlack,endBlack)
         shift_by(gopr,begBlack,output)
-
+    return begBlack
 
 def convert_csv_to_srt(csv,output):
     csv = pd.read_csv(csv)
@@ -230,15 +231,19 @@ def convert_csv_to_srt(csv,output):
 def line_up(main, vid2, vid3, parentList, childList,transcript, folder, storyLineUp = False):
     os.mkdir(folder)
     convert_csv_to_srt(transcript,folder +'/main.srt')
+    vid1Shift = 0
     if storyLineUp:
-        cut_to_story(main,storyLineUp)
-        main = 'main.mp4'
-    line_up_GOPR(main,vid2,folder +'/vid2.mp4',False)
-    line_up_GOPR(main,vid3,folder +'/vid3.mp4',False)
+        vid1Shift,clipname = cut_to_story(main,storyLineUp)
+        main = 'main.mp4'  
+    vid2Shift = line_up_GOPR(main,vid2,folder +'/vid2.mp4',False)
+    vid3Shift = line_up_GOPR(main,vid3,folder +'/vid3.mp4',False)
+    parentShifts = []
+    childShifts = []
     for i,vid in enumerate(parentList):
-        line_up_GOPR(main,vid,folder + '/parent'+str(i+1)+'.mp4')
+        parentShifts.append((line_up_GOPR(main,vid,folder + '/parent'+str(i+1)+'.mp4'),vid)) ## NOTE: This should be a tuple that still runs the function
     for i, vid in enumerate(childList):
-        line_up_GOPR(main,vid,folder + '/child'+str(i+1)+'.mp4')
+        childShifts.append((line_up_GOPR(main,vid,folder + '/child'+str(i+1)+'.mp4'),vid))
+    generate_metadata(clipname,vid1Shift,vid2Shift,vid3Shift,parentShifts,childShifts)
 
 def cut_to_story(main, annotation):
     csv = pd.read_csv(annotation)
@@ -246,8 +251,26 @@ def cut_to_story(main, annotation):
     for row in csv.iterrows():
         if (row[1]['Storyreading']) == 1:
             toCut = row[0] * 5
+            clipName = row[1]['name'] ## this needs to be edited with proper name
             break
     shift_by(main,toCut,'main.mp4')
+    return toCut, clipName
+
+def generate_metadata(clipname,vid1,vid2,vid3,parent,child):
+    with open ('metadata.txt','w+') as f:
+        if clipname:
+            f.write('The main video was cut to match the following clip: ' + str(clipname)+'\n') ## add text here, maybe use markdown?
+        f.write('The main video was shifted by '+str(vid1)+' seconds \n')
+        f.write('Video 2 was shifted by '+ str(vid2)+' seconds \n')
+        f.write('Video 3 was shifted by '+str(vid3)+' second \n')
+        for tupl in parent:
+            f.write('The parent gopro video corresponding to '+str(tupl[1])+ ' was shifted by ' + str(tupl[0])+ ' seconds \n')
+        for tupl in child:
+            f.write('The video corresponding to '+str(tupl[1])+ ' was shifted by ' + str(tupl[0])+ ' seconds \n')       
+        ## TODO: Maybe return name of clip from `cut_to_story`
+    ## save shifts
+    ## name of clip we shifted to
+    ## story start time
 
 if __name__ == "__main__":
     # add_black_frames('Resources/videos/test.mp4',10,30)
